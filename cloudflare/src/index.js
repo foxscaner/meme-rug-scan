@@ -5,6 +5,7 @@ const FOUR_IMG = "https://static.four.meme";
 const DS = "https://api.dexscreener.com/latest/dex/search";
 
 const memory = new Map();
+const inflight = new Map();
 
 function num(value) {
   const n = typeof value === "number" ? value : Number.parseFloat(value);
@@ -46,6 +47,25 @@ function tokenAddress(pool, included) {
   return { addr, attrs };
 }
 
+function poolActivity(attrs) {
+  const tx = attrs?.transactions?.h24 || {};
+  const buys = num(tx.buys) || 0;
+  const sells = num(tx.sells) || 0;
+  const created = Date.parse(attrs?.pool_created_at || attrs?.created_at || "") / 1000;
+  return {
+    created: Number.isFinite(created) ? Math.floor(created) : null,
+    tx_h24: buys + sells || null,
+    volume_h24: num(attrs?.volume_usd?.h24),
+  };
+}
+
+function launchpadFor(address, source) {
+  if (source === "four") return "fourmeme";
+  const value = String(address || "").toLowerCase();
+  if (value.endsWith("8888") || value.endsWith("7777")) return "flap";
+  return null;
+}
+
 function parseTrending(data, limit = 20) {
   const included = includedTokens(data);
   const out = [];
@@ -53,9 +73,10 @@ function parseTrending(data, limit = 20) {
   for (const pool of data?.data || []) {
     const { addr, attrs } = tokenAddress(pool, included);
     const key = addr.toLowerCase();
-    if (!addr || seen.has(key)) continue;
+    if (!addr || seen.has(key) || key === WBNB) continue;
     seen.add(key);
     const pa = pool.attributes || {};
+    const activity = poolActivity(pa);
     out.push({
       token: addr,
       symbol: attrs.symbol || "",
@@ -63,6 +84,8 @@ function parseTrending(data, limit = 20) {
       image: httpsImage(attrs.image_url),
       mcap_usd: num(pa.market_cap_usd) || num(pa.fdv_usd),
       price_usd: num(pa.base_token_price_usd),
+      launchpad: launchpadFor(addr),
+      ...activity,
     });
     if (out.length >= limit) break;
   }
@@ -76,16 +99,19 @@ function parseNewPools(data, limit = 20) {
     const { addr, attrs } = tokenAddress(pool, included);
     const key = addr.toLowerCase();
     if (!addr || key === WBNB) continue;
-    const created = Date.parse(pool.attributes?.pool_created_at || pool.attributes?.created_at || "") / 1000;
-    const stamp = Number.isFinite(created) ? Math.floor(created) : null;
+    const pa = pool.attributes || {};
+    const activity = poolActivity(pa);
     const prev = by.get(key);
-    if (prev && (prev.created || 0) >= (stamp || 0)) continue;
+    if (prev && (prev.created || 0) >= (activity.created || 0)) continue;
     by.set(key, {
       token: addr,
       symbol: attrs.symbol || "",
       name: attrs.name || "",
       image: httpsImage(attrs.image_url),
-      created: stamp,
+      created: activity.created,
+      mcap_usd: num(pa.market_cap_usd) || num(pa.fdv_usd),
+      launchpad: launchpadFor(addr),
+      tx_h24: activity.tx_h24,
     });
   }
   return [...by.values()].sort((a, b) => (b.created || 0) - (a.created || 0)).slice(0, limit);
@@ -110,6 +136,9 @@ function parseFour(data, limit = 30) {
       name: row.name || "",
       image: fourImage(row.img || row.image || ""),
       created,
+      mcap_usd: num(row.marketCap),
+      tx_h24: num(row.hold) || num(row.day1Vol),
+      launchpad: "fourmeme",
     };
     const prev = by.get(key);
     if (!prev || (created || 0) > (prev.created || 0)) {
@@ -136,13 +165,25 @@ function mergeNew(rows, limit = 20) {
     const image = httpsImage(row.image);
     const prev = by.get(key);
     if (!prev) {
-      by.set(key, { token: addr, symbol: row.symbol || "", name: row.name || "", image, created });
+      by.set(key, {
+        token: addr,
+        symbol: row.symbol || "",
+        name: row.name || "",
+        image,
+        created,
+        mcap_usd: num(row.mcap_usd),
+        tx_h24: num(row.tx_h24),
+        launchpad: row.launchpad || launchpadFor(addr),
+      });
       continue;
     }
     if (created && (!prev.created || created < prev.created)) prev.created = created;
     if (!prev.image && image) prev.image = image;
     if (!prev.symbol && row.symbol) prev.symbol = row.symbol;
     if (!prev.name && row.name) prev.name = row.name;
+    if (prev.mcap_usd == null && num(row.mcap_usd) != null) prev.mcap_usd = num(row.mcap_usd);
+    if (!prev.tx_h24 && num(row.tx_h24)) prev.tx_h24 = num(row.tx_h24);
+    if (!prev.launchpad && row.launchpad) prev.launchpad = row.launchpad;
   }
   return [...by.values()].sort((a, b) => (b.created || 0) - (a.created || 0)).slice(0, limit);
 }
@@ -191,20 +232,55 @@ async function fetchJSON(url, options = {}) {
 
 async function remember(key, seconds, load) {
   const hit = memory.get(key);
-  if (hit && Date.now() - hit.at < seconds * 1000) return hit.value;
-  const value = await load();
-  if (Array.isArray(value) && value.length) memory.set(key, { at: Date.now(), value });
-  return value;
+  if (hit && Date.now() - hit.at < seconds * 1000 && !(Array.isArray(hit.value) && !hit.value.length)) return hit.value;
+  if (inflight.has(key)) return inflight.get(key);
+  const job = Promise.resolve()
+    .then(load)
+    .then((value) => {
+      if (!Array.isArray(value) || value.length) memory.set(key, { at: Date.now(), value });
+      return value;
+    })
+    .finally(() => inflight.delete(key));
+  inflight.set(key, job);
+  return job;
+}
+
+function asMarket(row) {
+  return {
+    token: row.token,
+    symbol: row.symbol || "",
+    name: row.name || "",
+    image: row.image || "",
+    mcap_usd: row.mcap_usd ?? null,
+    price_usd: row.price_usd ?? null,
+    launchpad: row.launchpad || null,
+    created: row.created || null,
+    tx_h24: row.tx_h24 || null,
+    volume_h24: row.volume_h24 || null,
+  };
 }
 
 async function trending() {
   return remember("trending", 60, async () => {
-    const data = await fetchJSON(`${GT}/trending_pools?include=base_token&page=1`);
-    return parseTrending(data, 20);
+    try {
+      const data = await fetchJSON(`${GT}/trending_pools?include=base_token&page=1`);
+      const items = parseTrending(data, 20);
+      if (items.length) return items;
+    } catch (error) {
+      console.log(`trending: ${error instanceof Error ? error.message : "failed"}`);
+    }
+    try {
+      const data = await fetchJSON(`${GT}/pools?include=base_token&page=1`);
+      const items = parseTrending(data, 20);
+      if (items.length) return items;
+    } catch (error) {
+      console.log(`pools: ${error instanceof Error ? error.message : "failed"}`);
+    }
+    return (await launchRows()).slice(0, 20).map(asMarket);
   });
 }
 
-async function newTokens() {
+async function launchRows() {
   return remember("new", 15, async () => {
     const [four, pools] = await Promise.all([
       fetchJSON(FOUR, {
@@ -214,8 +290,99 @@ async function newTokens() {
       }).then((data) => parseFour(data, 30)).catch(() => []),
       fetchJSON(`${GT}/new_pools?include=base_token&page=1`).then((data) => parseNewPools(data, 20)).catch(() => []),
     ]);
-    return mergeNew([...four, ...pools], 20).slice(0, 7);
+    return mergeNew([...four, ...pools], 24);
   });
+}
+
+async function newTokens() {
+  return (await launchRows()).slice(0, 7);
+}
+
+function asRecent(row) {
+  return {
+    token: row.token,
+    chain: "bnb",
+    ticker: row.symbol || null,
+    name: row.name || null,
+    image: row.image || "",
+    mcap_usd: row.mcap_usd ?? null,
+    launchpad: row.launchpad || null,
+    score: null,
+    band: null,
+    rug: false,
+    ts: row.created || Math.floor(Date.now() / 1000),
+  };
+}
+
+async function recentItems() {
+  return (await trending()).slice(0, 12).map(asRecent);
+}
+
+async function viewedItems() {
+  return (await trending())
+    .map((row) => ({
+      token: row.token,
+      chain: "bnb",
+      ticker: row.symbol || null,
+      name: row.name || null,
+      image: row.image || "",
+      launchpad: row.launchpad || null,
+      band: null,
+      checks: row.tx_h24 || 0,
+      ts: row.created || Math.floor(Date.now() / 1000),
+    }))
+    .sort((a, b) => b.checks - a.checks || b.ts - a.ts)
+    .slice(0, 12);
+}
+
+async function radarItems() {
+  const week = Math.floor(Date.now() / 1000) - 7 * 86400;
+  return (await launchRows())
+    .filter((row) => !row.created || row.created >= week)
+    .slice(0, 24)
+    .map((row) => ({
+      token: row.token,
+      chain: "bnb",
+      ticker: row.symbol || null,
+      name: row.name || null,
+      image: row.image || "",
+      mcap_usd: row.mcap_usd ?? null,
+      launchpad: row.launchpad || null,
+      score: null,
+      band: null,
+      rug: false,
+      ts: row.created || Math.floor(Date.now() / 1000),
+    }));
+}
+
+async function holderGraph() {
+  const rows = await trending();
+  for (const first of rows.slice(0, 5)) {
+    const token = String(first.token || "").toLowerCase();
+    if (!EVM.test(token)) continue;
+    let security = null;
+    try {
+      const response = await fetch(`https://api.gopluslabs.io/api/v1/token_security/56?contract_addresses=${token}`, {
+        headers: { accept: "application/json", "user-agent": "foxscanner/0.1" },
+      });
+      if (response.ok) security = await response.json();
+      else console.log(`goplus: ${response.status}`);
+    } catch (error) {
+      console.log(`goplus: ${error instanceof Error ? error.message : "failed"}`);
+    }
+    const result = security?.result || {};
+    const row = result[token] || result[first.token] || Object.values(result)[0] || {};
+    const holders = (Array.isArray(row.holders) ? row.holders : [])
+      .map((holder) => ({
+        wallet: String(holder?.address || "").trim(),
+        share: fraction(holder?.percent),
+      }))
+      .filter((holder) => EVM.test(holder.wallet))
+      .sort((a, b) => (b.share || 0) - (a.share || 0))
+      .slice(0, 6);
+    if (holders.length) return { token: first.token, symbol: first.symbol || "", name: first.name || "", holders };
+  }
+  return { token: rows[0]?.token || "", symbol: rows[0]?.symbol || "", name: rows[0]?.name || "", holders: [] };
 }
 
 async function search(query) {
@@ -228,7 +395,8 @@ async function search(query) {
 }
 
 function feed(body, seconds) {
-  return Response.json(body, { headers: { "cache-control": `public, max-age=${seconds}` } });
+  const cache = seconds > 0 ? `public, max-age=${seconds}` : "no-store";
+  return Response.json(body, { headers: { "cache-control": cache } });
 }
 
 const EVM = /^0x[0-9a-fA-F]{40}$/;
@@ -469,8 +637,43 @@ export default {
       console.log(`${url.pathname}: ${error instanceof Error ? error.message : "failed"}`);
       return feed({ chain: "bnb", items: [] }, 15);
     }
-    if (url.pathname === "/api/recent" || url.pathname === "/api/radar" || url.pathname === "/api/tokens/viewed") {
-      return feed({ items: [] }, 15);
+    if (url.pathname === "/api/recent") {
+      const band = (url.searchParams.get("band") || "").toUpperCase();
+      if (band === "DANGER" || band === "CLEAN") return feed({ items: [] }, 30);
+      try {
+        return feed({ items: await recentItems() }, 60);
+      } catch (error) {
+        console.log(`recent: ${error instanceof Error ? error.message : "failed"}`);
+        return feed({ items: [] }, 15);
+      }
+    }
+    if (url.pathname === "/api/tokens/viewed") {
+      const allowed = new Set(["5m", "30m", "1h", "6h", "24h"]);
+      const asked = url.searchParams.get("window") || "";
+      const range = allowed.has(asked) ? asked : "24h";
+      try {
+        return feed({ chain: "bnb", window: range, items: await viewedItems() }, 60);
+      } catch (error) {
+        console.log(`viewed: ${error instanceof Error ? error.message : "failed"}`);
+        return feed({ chain: "bnb", window: range, items: [] }, 0);
+      }
+    }
+    if (url.pathname === "/api/radar") {
+      try {
+        return feed({ window_min: 7 * 24 * 60, chain: "bnb", items: await radarItems() }, 30);
+      } catch (error) {
+        console.log(`radar: ${error instanceof Error ? error.message : "failed"}`);
+        return feed({ window_min: 7 * 24 * 60, chain: "bnb", items: [] }, 15);
+      }
+    }
+    if (url.pathname === "/api/graph") {
+      try {
+        const body = await holderGraph();
+        return feed(body, body.holders && body.holders.length ? 60 : 0);
+      } catch (error) {
+        console.log(`graph: ${error instanceof Error ? error.message : "failed"}`);
+        return feed({ holders: [] }, 0);
+      }
     }
     if (url.pathname.startsWith("/api/")) {
       return Response.json(

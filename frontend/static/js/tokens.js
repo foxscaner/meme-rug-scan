@@ -106,7 +106,7 @@
     body.innerHTML = viewed.map(x =>
       `<tr tabindex="0" data-ca="${esc(x.token)}"><td>${tokenCell(x)}</td>` +
       `<td class="tok-name">${esc(x.name || '—')}</td>` +
-      `<td class="tok-num">${esc(compact(x.checks))}</td>` +
+      `<td class="tok-num">${x.checks ? esc(compact(x.checks)) : "—"}</td>` +
       `<td>${riskPill(x.band)}</td></tr>`).join('');
   }
 

@@ -60,6 +60,9 @@
     const who = venue(trade, x.launchpad);
     const scan = '/?ca=' + encodeURIComponent(x.token) + '&chain=' + encodeURIComponent(x.chain || 'bnb');
     const score = x.score == null ? '—' : String(x.score);
+    const badge = x.band === 'CLEAN'
+      ? '<span class="radar-clean">' + esc(t('CLEAN')) + '</span>'
+      : '<span class="radar-new">' + esc(t('New')) + '</span>';
     const cake = x.chain === 'bnb'
       ? 'https://pancakeswap.finance/swap?chain=bsc&outputCurrency=' + encodeURIComponent(x.token) : '';
     const tradeBtn = trade && who
@@ -73,7 +76,7 @@
       + (pad ? '<span class="pill">' + esc(pad) + '</span>' : '')
       + '</div></header><div class="radar-metrics"><div><span>' + esc(t('Mcap at scan')) + '</span><b>'
       + esc(usd(x.mcap_usd)) + '</b></div><div class="radar-score"><b>' + esc(score)
-      + '<small>/100</small></b><span class="radar-clean">' + esc(t('CLEAN')) + '</span></div></div><p class="radar-addr"><span>'
+      + '<small>/100</small></b>' + badge + '</div></div><p class="radar-addr"><span>'
       + esc(short(x.token)) + '</span><button type="button" data-copy="' + esc(x.token) + '" aria-label="'
       + esc(t('Copy address')) + '"><svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.7"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V6a2 2 0 0 1 2-2h10"/></g></svg></button></p><div class="radar-actions">'
       + tradeBtn + cakeBtn + '<a class="radar-act" href="' + esc(scan) + '">' + esc(t('Full scan')) + '</a></div></article>';

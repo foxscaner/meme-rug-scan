@@ -207,6 +207,13 @@
   height: auto;
 }
 
+.signal-about__constellation img,
+.signal-about__constellation svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
 .signal-about__scout {
   position: absolute;
   z-index: 3;
@@ -554,12 +561,12 @@
 }
 
 .signal-about__source-flow {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+  display: flex;
   align-items: stretch;
 }
 
 .signal-about__source-flow article {
+  flex: 1 1 0;
   min-width: 0;
   padding: 1.5rem;
   border: 1px solid var(--line);
@@ -568,6 +575,7 @@
 
 .signal-about__source-flow > i {
   display: grid;
+  flex: 0 0 2.5rem;
   min-width: 2.5rem;
   place-items: center;
   color: var(--y);
@@ -575,7 +583,8 @@
 }
 
 .signal-about__source-flow h3 {
-  overflow-wrap: break-word;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .signal-about__source-flow article > span {
@@ -723,8 +732,12 @@ html[data-theme="light"] .signal-about__contact-grid a {
   }
 
   .signal-about__source-flow {
-    grid-template-columns: 1fr;
+    flex-direction: column;
     gap: .6rem;
+  }
+
+  .signal-about__source-flow article {
+    flex: 1 1 auto;
   }
 
   .signal-about__source-flow > i {

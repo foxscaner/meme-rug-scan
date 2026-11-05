@@ -208,6 +208,8 @@ html[data-theme="light"] .watermark span{color:rgba(90,73,38,.22);text-shadow:no
 .ticker-label{display:flex;align-items:center;gap:10px;margin:0 0 14px;font:700 27px/1 var(--font-display);letter-spacing:0;text-transform:none;color:var(--hero)}
 .ticker-label svg{width:27px;height:27px;color:var(--y);flex:none}
 .marquee{min-width:0;overflow:hidden;mask-image:linear-gradient(90deg,transparent,#000 4%,#000 96%,transparent)}
+.marquee:has(.tick-empty),.token-chips:has(.tick-empty){overflow:visible;mask-image:none;-webkit-mask-image:none}
+.tick-empty{display:block;padding:2px 0 8px}
 .tick-run{display:flex;gap:12px;width:max-content;animation:ticker 48s linear infinite}
 .marquee:hover .tick-run{animation-play-state:paused}
 .tick{display:inline-flex;align-items:center;gap:10px;height:62px;min-width:176px;max-width:220px;padding:8px 14px 8px 8px;border-radius:12px;border:1px solid var(--line);background:var(--s1);color:var(--text);cursor:pointer;text-align:left}
@@ -668,7 +670,8 @@ html[data-theme="light"] .api-plan{background:#fff}
 .radar-score{text-align:right}
 .radar-score b{font-variant-numeric:tabular-nums}
 .radar-score small{color:var(--muted);font-size:13px;font-weight:600}
-.radar-clean{display:inline-flex;margin-top:6px;padding:3px 8px;border-radius:999px;border:1px solid var(--low);color:var(--low);font:800 11px/1 var(--body);letter-spacing:.08em}
+.radar-clean,.radar-new{display:inline-flex;margin-top:6px;padding:3px 8px;border-radius:999px;border:1px solid var(--low);color:var(--low);font:800 11px/1 var(--body);letter-spacing:.08em}
+.radar-new{border-color:var(--y);color:var(--y)}
 .radar-addr{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:12px 0 0;color:var(--muted);font-family:var(--mono);font-size:13px}
 .radar-addr button{width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--muted);cursor:pointer}
 .radar-addr button:hover{color:var(--y)}

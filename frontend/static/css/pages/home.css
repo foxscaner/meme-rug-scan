@@ -32,7 +32,7 @@
   letter-spacing: -.02em;
 }
 
-.home-hero-art {
+.hero-art.home-hero-art {
   grid-area: art;
   position: relative;
   isolation: isolate;
@@ -68,10 +68,13 @@
 .home-hero-art .watermark {
   z-index: 0;
   top: calc(12% - 8px);
-  right: -9rem;
-  left: -9rem;
-  justify-content: center;
-  gap: clamp(12px, 2vw, 24px);
+  left: 50%;
+  right: auto;
+  width: 100vw;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-inline: clamp(1rem, 4vw, 3rem);
+  transform: translateX(-50%);
   opacity: .8;
 }
 .home-hero-art .watermark span {
@@ -177,7 +180,7 @@ html[data-theme="light"] .home-hero-art::after {
   .home-hero-art { width: min(100%, 25.344rem); margin-top: .5rem; }
   .home-hero-art img { width: min(23.76rem, 97.152vw); }
   .home-hero-art::after { right: 0; bottom: .35rem; left: 0; height: 2.25rem; }
-  .home-hero-art .watermark { top: calc(18% - 8px); right: -2rem; left: -2rem; }
+  .home-hero-art .watermark { top: calc(18% - 8px); padding-inline: 1rem; }
   .home-hero-art .watermark span { font-size: clamp(3.75rem, 16vw, 7.5rem); }
   .home-terminal .finder,
   .home-terminal .hero-actions { width: 100%; }
